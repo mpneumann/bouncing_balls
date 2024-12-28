@@ -1,182 +1,213 @@
 import pygame
 import random
 import sys
+import csv
+from datetime import datetime
 
 pygame.init()
 
-#window
-width, height = 800, 600
+width, height = 1000, 600  
 screen = pygame.display.set_mode((width, height))
-pygame.display.set_caption("mason's bouncing balls game")
+pygame.display.set_caption("SPY Stats - Bouncing Balls")
 
 clock = pygame.time.Clock()
 fps = 60
 
+props = []
+
+max_chg = 0
+min_chg = float('inf')
+
+with open('Download Data - FUND_US_ARCX_SPY (1).csv', 'r') as f:
+    rows = list(csv.DictReader(f))[:60]  
+    for row in rows:
+        dt = datetime.strptime(row['Date'], '%m/%d/%Y')
+        op = float(row['Open'].replace(',', ''))
+        cl = float(row['Close'].replace(',', ''))
+
+        chg = cl - op
+        pct = (chg / op) * 100
+        abs_pct = abs(pct)
+
+        if abs_pct > max_chg:
+            max_chg = abs_pct
+        if abs_pct < min_chg:
+            min_chg = abs_pct
+
+        clr = (0, 255, 0) if chg > 0 else (255, 0, 0)
+
+        props.append({
+            'Date': dt,
+            'Open_Price': op,
+            'Close_Price': cl,
+            'Price_Change': chg,
+            'Percent_Price_Change': pct,
+            'Ball_Size': 15,
+            'Color': clr,
+        })
+
+min_spd = 1
+max_spd = 10
+
+for p in props:
+    abs_pct = abs(p['Percent_Price_Change'])
+    if max_chg == min_chg:
+        spd = (min_spd + max_spd) / 2
+    else:
+        spd = min_spd + (abs_pct - min_chg) * (max_spd - min_spd) / (max_chg - min_chg)
+    p['Speed'] = spd
+
 class Ball:
-    def __init__(self, x, y, r, color, speed_x, speed_y):
+    def __init__(self, x, y, r, clr, sx, sy, dt, cl, op, lbl):  
         self.x = x
         self.y = y
         self.r = r
-        self.color = color
-        self.speed_x = speed_x
-        self.speed_y = speed_y
+        self.clr = clr
+        self.sx = sx
+        self.sy = sy
+        self.dt = dt
+        self.cl = cl
+        self.op = op
+        self.lbl = lbl
 
     def move(self):
-        self.x += self.speed_x
-        self.y += self.speed_y
+        self.x += self.sx
+        self.y += self.sy
 
-        #walls bouncing 
-        if self.x - self.r < 0 or self.x + self.r >= width:
-            self.speed_x *= -1
-        if self.y - self.r < 0 or self.y + self.r >= height:
-            self.speed_y *= -1
+        if self.x - self.r < 0:
+            self.x = self.r
+            self.sx *= -1
+        elif self.x + self.r > width:
+            self.x = width - self.r
+            self.sx *= -1
+        if self.y - self.r < 0:
+            self.y = self.r
+            self.sy *= -1
+        elif self.y + self.r > height:
+            self.y = height - self.r
+            self.sy *= -1
 
-    def draw(self, screen):
-        pygame.draw.circle(screen, self.color, (self.x, self.y), self.r)
+    def draw(self, scr, fnt):
+        pygame.draw.circle(scr, self.clr, (int(self.x), int(self.y)), self.r)
+        lbl_surf = fnt.render(str(self.lbl), True, (255, 255, 255))  
+        lbl_rect = lbl_surf.get_rect(center=(self.x, self.y))
+        scr.blit(lbl_surf, lbl_rect)
 
-#random ball gen 
+    def clicked_on(self, pos):
+        """ Check if the ball was clicked. """
+        d = ((self.x - pos[0]) ** 2 + (self.y - pos[1]) ** 2) ** 0.5
+        return d < self.r
+
 balls = []
 
-def create_balls(num_balls):
+def create_balls(n):
     global balls
     balls = []
-    for _ in range(num_balls):
-        r = random.randint(10, 30)
-        x = random.randint(r, width - r)
-        y = random.randint(r, height - r)
-        color = random.choice([
-            (255, 0, 0),  # red
-            (0, 255, 0),
-            (0, 0, 255),
-            (255, 255, 0),
-            (255, 0, 255),
-            (0, 255, 255)
-        ])
-        speed_x = random.uniform(-5, 5)
-        speed_y = random.uniform(-5, 5)
-        balls.append(Ball(x, y, r, color, speed_x, speed_y))
+    fnt = pygame.font.Font(None, 24) 
+    for i in range(min(n, len(props))):
+        p = props[i]
+        
+        r = p['Ball_Size']
+        x = random.randint(int(r), width - int(r))
+        y = random.randint(int(r), height - int(r))
 
-is_running = False
-start_stop_key = pygame.K_SPACE #key
-
-for event in pygame.event.get():
-    if event.type == pygame.QUIT:
-        pygame.quit()
-        sys.exit()
-    elif event.type == pygame.KEYDOWN:
-        if event.key == start_stop_key:
-            is_running = not is_running
-
-def get_ball_count_input():
-    font = pygame.font.Font(None, 36)
-    input_box = pygame.Rect(width // 2 - 100, height // 2 - 20, 200, 40)
-    color_inactive = pygame.Color('lightskyblue3')
-    color_active = pygame.Color('dodgerblue2')
-    color = color_inactive
-    active = False
-    text = ''
-    done = False
-
-    while not done:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if input_box.collidepoint(event.pos): #click on active rec
-                    active = not active
-                else:
-                    active = False
-                color = color_active if active else color_inactive
-            elif event.type == pygame.KEYDOWN:
-                if active:
-                    if event.key == pygame.K_RETURN:
-                        done = True
-                        return int(text) if text.isdigit() else 10
-                    elif event.key == pygame.K_BACKSPACE:
-                        text = text[:-1]
-                    else:
-                        text += event.unicode
-        screen.fill((30, 30, 30))
-        txt_surface = font.render(text, True, color)
-        width_box = max(200, txt_surface.get_width() + 10)
-        input_box.w = width_box
-
-        screen.blit(txt_surface, (input_box.x + 5, input_box.y + 5))
-        pygame.draw.rect(screen, color, input_box, 2)
-
-        pygame.display.flip()
-        clock.tick(30)
-
-num_balls = get_ball_count_input()
-create_balls(num_balls)
-
-def draw_speed_slider(speed_factor):
-    pygame.draw.rect(screen, (200, 200, 200), (50, height - 50, width - 100, 10))
-    pos_x = 50 + (width - 100) * (speed_factor / 10)
-    pygame.draw.circle(screen, (255, 0, 0), (int(pos_x), height - 45), 10)
-
-def get_speed_factor():
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    if 40 <= mouse_y <= height - 40:
-        return None
-    speed_factor = ((mouse_x - 50) / (width - 100)) * 10
-    speed_factor = max(0.1, min(speed_factor, 10))
-    return speed_factor
+        clr = p['Color']
+        sx = p['Speed'] * random.choice([-1, 1])
+        sy = p['Speed'] * random.choice([-1, 1])
+        dt = p['Date'].strftime('%m/%d/%Y')
+        cl = p['Close_Price']
+        op = p['Open_Price']
+        
+        lbl = i + 1
+        balls.append(Ball(x, y, int(r), clr, sx, sy, dt, cl, op, lbl))
 
 def handle_collisions():
     for i in range(len(balls)):
         for j in range(i + 1, len(balls)):
-            ball1 = balls[i]
-            ball2 = balls[j]
-            dx = ball1.x - ball2.x
-            dy = ball1.y - ball2.y
-            distance = (dx**2 + dy**2) ** 0.5
-            if distance < ball1.r + ball2.r:
-                ball1.speed_x, ball2.speed_x = ball2.speed_x, ball1.speed_x
-                ball1.speed_y, ball2.speed_y = ball2.speed_y, ball1.speed_y
+            b1 = balls[i]
+            b2 = balls[j]
+            dx = b1.x - b2.x
+            dy = b1.y - b2.y
+            d = (dx**2 + dy**2) ** 0.5
+            md = b1.r + b2.r
+            if d < md:
+                ovr = 0.5 * (md - d)
+                if d != 0:
+                    b1.x += (ovr * dx) / d
+                    b1.y += (ovr * dy) / d
+                    b2.x -= (ovr * dx) / d
+                    b2.y -= (ovr * dy) / d
+                else:
+                    b1.x += random.uniform(-ovr, ovr)
+                    b1.y += random.uniform(-ovr, ovr)
+                    b2.x += random.uniform(-ovr, ovr)
+                    b2.y += random.uniform(-ovr, ovr)
 
-antigravity = False
-antigravity_timer = 5000
-last_switch = pygame.time.get_ticks()
+                nx = dx / d if d != 0 else 1
+                ny = dy / d if d != 0 else 0
+                tx = -ny
+                ty = nx
+
+                t1 = b1.sx * tx + b1.sy * ty
+                t2 = b2.sx * tx + b2.sy * ty
+
+                n1 = b1.sx * nx + b1.sy * ny
+                n2 = b2.sx * nx + b2.sy * ny
+
+                b1.sx = tx * t1 + nx * n2
+                b1.sy = ty * t1 + ny * n2
+                b2.sx = tx * t2 + nx * n1
+                b2.sy = ty * t2 + ny * n1
+
+def show_spread(b, fnt):
+    """ display the open-close spread for the clicked ball. """
+    spd = b.cl - b.op
+    txt = f"Open-Close Spread for {b.dt}: {spd:.2f}"
+    surf = fnt.render(txt, True, (255, 255, 255))  
+    screen.blit(surf, (10, height - 40)) 
+
+run = True  
+sel_ball = None
+
+n_balls = 60  
+create_balls(n_balls)
+
+print(f"Number of balls created: {len(balls)}")
+
+# Add a paused state variable
+paused = False
 
 while True:
     screen.fill((0, 0, 0))
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
+    for evt in pygame.event.get():
+        if evt.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
-        elif event.type == pygame.KEYDOWN:
-            if event.key == start_stop_key:
-                is_running = not is_running
-    speed_factor = 1
+        elif evt.type == pygame.MOUSEBUTTONDOWN:
+            pos = pygame.mouse.get_pos()
+            for b in balls:
+                if b.clicked_on(pos):
+                    sel_ball = b
+                    break  
+            else:
+                sel_ball = None
+        elif evt.type == pygame.KEYDOWN:
+            if evt.key == pygame.K_SPACE:
+                paused = not paused  
 
-    if pygame.mouse.get_pressed()[0]:
-        new_speed = get_speed_factor()
-        if new_speed:
-            speed_factor = new_speed
-
-    if is_running:
-        for ball in balls:
-            ball.speed_x *= speed_factor
-            ball.speed_y *= speed_factor
-            ball.move()
-            ball.speed_x /= speed_factor
-            ball.speed_y /= speed_factor
+    if not paused:
+        for b in balls:
+            b.move()
         handle_collisions()
 
-    for ball in balls:
-        ball.draw(screen)
+    # Always draw the balls
+    fnt = pygame.font.Font(None, 24) 
+    for b in balls:
+        b.draw(screen, fnt)
 
-    draw_speed_slider(speed_factor)
-
-    current_time = pygame.time.get_ticks()
-    if current_time - last_switch >= antigravity_timer:
-        antigravity = not antigravity
-        last_switch = current_time
-        for ball in balls:
-            ball.speed_y *= -1
+    if sel_ball:
+        show_spread(sel_ball, fnt)
 
     pygame.display.flip()
     clock.tick(fps)
